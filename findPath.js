@@ -19,3 +19,12 @@ function makeDataset(dataPath, filter){
 const train = './dataset/train'
 const filter = '.png';
 makeDataset(train, filter);
+
+
+function makeGen(dataPath, filter){
+    fs.readdir(dataPath, {withFileTypes:true}, function(err, data){
+        const label = data.filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
+        console.log(label);
+    });
+}
+makeGen(train, filter);
