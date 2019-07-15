@@ -14,7 +14,7 @@ function getPath(dataPath, filter) {
             console.log(' - %s : %s items.', className, files.length);
             files.forEach(async (f, i) => {
                 const fullPath = path.join(dataPath, className, f);
-                class_path.push(fullPath);
+                class_path.push([className, fullPath]);
             });
         });
         resolve(class_path);
@@ -53,9 +53,10 @@ const f = 'png';
 getPath(a,f)
     .then(path => {
         path.forEach(p => {
-            loadImage(p)
+            loadImage(p[1])
                 .then(img => makeTensor(img))
                 .then(tensor => mergeTensor(tensor))
                 .then(e => console.log(e.shape));
+            console.log(p[0]);
         });
     });
