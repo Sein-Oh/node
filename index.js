@@ -1,62 +1,68 @@
 const fs = require('fs');
 const canvas = require('pureimage');
-const tf = require('@tensorflow/tfjs');
+const tf = require('@tensorflow/tfjs-node');
 const path = require('path');
 
+let IMAGE_SIZE = 224;
+let LABEL;
+
 function getPath(dataPath, filter) {
-    return new Promise(function (resolve, reject) {
-        const numClass = fs.readdirSync(dataPath, { withFileTypes: true }).filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
-        console.log('Pound %s class', numClass.length);
-        const class_path = [];
-        numClass.forEach(className => {
-            const filePath = path.join(dataPath, className);
-            const files = fs.readdirSync(filePath).filter((file) => file.endsWith(filter));
-            console.log(' - %s : %s items.', className, files.length);
-            files.forEach(async (f, i) => {
-                const fullPath = path.join(dataPath, className, f);
-                class_path.push([className, fullPath]);
-            });
+    LABEL = fs.readdirSync(dataPath, { withFileTypes: true }).filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
+    console.log('Pound %s class', LABEL.length);
+    const class_path = [];
+    LABEL.forEach(className => {
+        const filePath = path.join(dataPath, className);
+        const files = fs.readdirSync(filePath).filter((file) => file.endsWith(filter));
+        console.log(' - %s : %s items.', className, files.length);
+        files.forEach(async (f, i) => {
+            const fullPath = path.join(dataPath, className, f);
+            class_path.push([className, fullPath]);
         });
-        resolve(class_path);
     });
+    return class_path;
 }
 
 function loadImage(imgPath) {
-    return new Promise(function (resolve, reject) {
-        (imgPath.endsWith('png')) ? img = canvas.decodePNGFromStream(fs.createReadStream(imgPath)) :
-            (imgPath.endsWith('jpg')) ? img = canvas.decodeJPEGFromStream(fs.createReadStream(imgPath)) : console.log('Image format not suppored. You can use jpg or png.');
-        resolve(img);
-    });
+    (imgPath.endsWith('png')) ? img = canvas.decodePNGFromStream(fs.createReadStream(imgPath)) :
+        (imgPath.endsWith('jpg')) ? img = canvas.decodeJPEGFromStream(fs.createReadStream(imgPath)) : console.log('Image format not suppored. You can use jpg or png.');
+    return img;
 }
 
 function makeTensor(imgData) {
-    return new Promise(function (resolve, reject) {
-        const tens = tf.browser.fromPixels(imgData)
-            .resizeNearestNeighbor([224, 224])
-            .div(255.0)
-            .expandDims();
-        resolve(tens);
-    });
+    const tens = tf.browser.fromPixels(imgData)
+        .resizeNearestNeighbor([IMAGE_SIZE, IMAGE_SIZE])
+        .div(255.0)
+        .expandDims();
+    return tens;
 };
 
-let xs;
+let xMerge;
 function mergeTensor(tensor) {
-    return new Promise(function (resolve, reject) {
-        (xs == undefined) ? xs = tensor : xs = xs.concat(tensor);
-        resolve(xs);
-    });
+    (xMerge == undefined) ? xMerge = tensor : xMerge = xMerge.concat(tensor);
+    return xMerge;
 }
 
-
-const a = './dataset/train';
-const f = 'png';
-getPath(a,f)
-    .then(path => {
-        path.forEach(p => {
-            loadImage(p[1])
-                .then(img => makeTensor(img))
-                .then(tensor => mergeTensor(tensor))
-                .then(e => console.log(e.shape));
-            console.log(p[0]);
-        });
+let yMerge;
+function mergeLabel(label) {
+    LABEL.forEach(function(className, index) {
+        if(label == className){
+            (yMerge == undefined) ? yMerge = tf.oneHot(index, LABEL.length) : yMerge = yMerge.concat(tf.oneHot(index, LABEL.length));
+        }
     });
+    return yMerge;
+}
+
+async function run() {
+    const a = './dataset/train';
+    const f = 'png';
+    const imgPath = await getPath(a, f);
+    let xs, ys;
+    for (let p of imgPath) {
+        xs = await loadImage(p[1]).then(img => makeTensor(img)).then(tensor => mergeTensor(tensor));
+        ys = await mergeLabel(p[0]);
+    }
+    console.log(xs.shape);
+    console.log(ys.shape);
+}
+
+run();
