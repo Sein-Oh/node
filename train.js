@@ -1,9 +1,9 @@
 const fs = require('fs');
 const canvas = require('pureimage');
-const tf = require('@tensorflow/tfjs-node');
+const tf = require('@tensorflow/tfjs-node-gpu');
 const path = require('path');
 
-let IMAGE_SIZE = 224;
+let IMAGE_SIZE = 32;
 let LABEL;
 
 function getPath(dataPath, filter) {
@@ -44,16 +44,55 @@ function mergeTensor(tensor) {
 
 let yMerge;
 function mergeLabel(label) {
-    LABEL.forEach(function(className, index) {
-        if(label == className){
-            (yMerge == undefined) ? yMerge = tf.oneHot(index, LABEL.length) : yMerge = yMerge.concat(tf.oneHot(index, LABEL.length));
+    LABEL.forEach(function (className, index) {
+        if (label == className) {
+            (yMerge == undefined) ? yMerge = tf.oneHot(index, LABEL.length).expandDims() : yMerge = yMerge.concat(tf.oneHot(index, LABEL.length).expandDims());
         }
     });
     return yMerge;
 }
 
+function makeCNN() {
+    const model = tf.sequential();
+    model.add(tf.layers.conv2d({
+        filters: 32,
+        kernelSize: 3,
+        activation: 'relu',
+        inputShape: [IMAGE_SIZE, IMAGE_SIZE, 3],
+        strides: 1,
+        kernelInitializer: 'varianceScaling'
+    }));
+    model.add(tf.layers.conv2d({
+        filters: 64,
+        kernelSize: 3,
+        activation: 'relu'
+    }));
+    model.add(tf.layers.maxPooling2d({
+        poolSize: [2, 2]
+    }));
+    model.add(tf.layers.flatten());
+    model.add(tf.layers.dense({
+        units: 128,
+        activation: 'relu'
+    }));
+    model.add(tf.layers.dense({
+        units: LABEL.length,
+        activation: 'softmax'
+    }));
+    model.compile({
+        loss: 'categoricalCrossentropy',
+        optimizer: tf.train.adam(),
+        metrics: ['accuracy']
+    });
+    return model;
+}
+
+function onBatchEnd(batch, logs) {
+    console.log('Loss : %s , Accuracy : %s', logs.loss.toFixed(4), logs.acc.toFixed(4));
+}
+
 async function run() {
-    const a = './dataset/train';
+    const a = './dataset';
     const f = 'png';
     const imgPath = await getPath(a, f);
     let xs, ys;
@@ -61,8 +100,16 @@ async function run() {
         xs = await loadImage(p[1]).then(img => makeTensor(img)).then(tensor => mergeTensor(tensor));
         ys = await mergeLabel(p[0]);
     }
-    console.log(xs.shape);
-    console.log(ys.shape);
+    const model = await makeCNN();
+    //model.summary();
+    await model.fit(xs, ys, {
+        stepsPerEpoch: 500,
+        epochs: 10,
+        callbacks: { onBatchEnd }
+    });
+    console.log("Complete training.")
+    await model.save('file://saved');
+
 }
 
 run();
