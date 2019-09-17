@@ -1,8 +1,9 @@
-const fs = require('fs');
-const canvas = require('pureimage');
 const tf = require('@tensorflow/tfjs-node');
 const path = require('path');
-const term = require('terminal-kit').terminal;
+const fs = require('fs');
+const { createCanvas, loadImage } = require('canvas');
+const canvas = createCanvas();
+const ctx = canvas.getContext('2d');
 
 function getImagePath(mainPath, fileExt) {
     const className = fs.readdirSync(mainPath, { withFileTypes: true }).filter(dirent => dirent.isDirectory()).map(dirent => dirent.name);
@@ -20,20 +21,6 @@ function getImagePath(mainPath, fileExt) {
         });
     });
     return [imgPath, lblAry, className];
-}
-
-function loadImage(imgPath) {
-    (imgPath.endsWith('png')) ? img = canvas.decodePNGFromStream(fs.createReadStream(imgPath)) :
-        (imgPath.endsWith('jpg')) ? img = canvas.decodeJPEGFromStream(fs.createReadStream(imgPath)) : console.log('Image format not suppored. You can use jpg or png.');
-    return img;
-}
-
-function saveImage(img, savePath) {
-    canvas.encodePNGToStream(img, fs.createWriteStream(savePath)).then(() => console.log('Image saved to "%s"', savePath));
-}
-
-function showImage(img) {
-    term.drawImage(img);
 }
 
 function makeCNN(imageSize, classes) {
@@ -90,35 +77,38 @@ function makeYsTensor(file) {
 
 function onBatchEnd(batch, logs) {
     console.log('Loss : %s , Accuracy : %s', logs.loss.toFixed(4), logs.acc.toFixed(4));
-    console.log(tf.memory().numTensors);
 }
 
 async function run() {
     const imageSize = 24;
-    const [imgPath, lblAry, classAry] = await getImagePath('shapes', 'png');
+    const [imgPath, lblAry, classAry] = await getImagePath('cat-dog', 'jpg');
     let xs;
-    for (let path of imgPath){
+    for (let path of imgPath) {
         const img = await loadImage(path);
-        const tens = await makeXsTensor(img, imageSize);
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        const tens = await makeXsTensor(canvas, imageSize);
         (xs == undefined) ? xs = tens : xs = xs.concat(tens);
     }
-   
+
     let ys;
     lblAry.forEach(lbl => {
-        for(let i=0; i<classAry.length; i++){
-            if(lbl == classAry[i]){
+        for (let i = 0; i < classAry.length; i++) {
+            if (lbl == classAry[i]) {
                 const y = tf.oneHot(i, classAry.length).expandDims();
                 (ys == undefined) ? ys = y : ys = ys.concat(y);
             }
         }
     });
-    
+
     const model = await makeCNN(imageSize, classAry.length);
     model.summary();
     await model.fit(xs, ys, {
-        epochs:20,
-        callbacks: {onBatchEnd}
+        epochs: 20,
+        callbacks: { onBatchEnd }
     });
+
     console.log('done');
 }
 
