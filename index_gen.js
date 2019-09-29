@@ -69,8 +69,19 @@ function makeXsTensor(img, imageSize) {
 function makeYsTensor(file) {
     for (let i = 0; i < classAry.length; i++) {
         if (file.label == classAry[i]) {
-            const ys = tf.oneHot(i, classAry.length).expandDims();
+            const ys = tf.oneHot(i, classAry.length);
             return ys;
+        }
+    }
+}
+
+async function* makeYs(){
+    for (let i=0; i < labelAry.length; i++){
+        for (let j=0; j<classAry.length; j++){
+            if(labelAry[i] == classAry[j]){
+                const y = await tf.oneHot(j, classAry.length);
+                yield y;
+            }
         }
     }
 }
@@ -79,9 +90,34 @@ function onBatchEnd(batch, logs) {
     console.log('Loss : %s , Accuracy : %s', logs.loss.toFixed(4), logs.acc.toFixed(4));
 }
 
+async function* makeXs() {
+    for (let i=0; i < imgPathAry.length; i++){
+        const img = await loadImage(imgPathAry[i]);
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        const tens = await tf.browser.fromPixels(canvas).resizeNearestNeighbor([24,24]).div(255.0);
+        yield tens;
+    }
+}
+
+let imgPathAry;
+let labelAry;
+let classAry;
 async function run() {
     const imageSize = 24;
-    const [imgPath, lblAry, classAry] = await getImagePath('cat-dog', 'jpg');
+    const [imPath, lbAry, cAry] = await getImagePath('shapes', 'png');
+    imgPathAry = imPath;
+    labelAry = lbAry;
+    classAry = cAry;
+    const model = await makeCNN(imageSize, classAry.length);
+    model.summary();
+    const xs = await tf.data.generator(makeXs);
+    const ys = await tf.data.generator(makeYs);
+    const ds = await tf.data.zip({xs, ys}).batch(15);
+    await model.fitDataset(ds, {epochs:5});
+
+    /*
     let xs;
     for (let path of imgPath) {
         const img = await loadImage(path);
@@ -102,13 +138,12 @@ async function run() {
         }
     });
 
-    const model = await makeCNN(imageSize, classAry.length);
     model.summary();
     await model.fit(xs, ys, {
-        epochs: 20
+        epochs: 5
         //callbacks: { onBatchEnd }
     });
-
+    */
     console.log('done');
 }
 
